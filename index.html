@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title> Endless 3D Runner - Dev: Muhammad Abdullah</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #0b0f19;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        h1 { margin-bottom: 2px; color: #38bdf8; text-transform: uppercase; letter-spacing: 2px; text-shadow: 0 0 12px rgba(56, 189, 248, 0.6); }
+        h3 { margin-top: 0; margin-bottom: 12px; color: #facc15; text-shadow: 0 0 8px rgba(250, 204, 21, 0.4); }
+
+        #gameCanvas {
+            border: 4px solid #38bdf8;
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.9);
+            border-radius: 12px;
+        }
+
+        .instructions {
+            margin-top: 12px;
+            color: #94a3b8;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1> Endless 3D Runner </h1>
+    <h3>Developer: Muhammad Abdullah</h3>
+
+    <canvas id="gameCanvas" width="800" height="280"></canvas>
+    <div class="instructions">Press <b>Spacebar / Click</b> to Jump | Press <b>Down Arrow</b> to Duck</div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let score = 0;
+        let gameOver = false;
+        let gameSpeed = 6;
+        let frame = 0;
+
+        // Weather Configurations
+        const weathers = [
+            { name: 'SUMMER', skyTop: [56, 189, 248], skyBot: [2, 132, 199], groundTop: [22, 197, 94], rain: 0, snow: 0 },
+            { name: 'RAINY', skyTop: [71, 85, 105], skyBot: [30, 41, 59], groundTop: [21, 128, 61], rain: 1, snow: 0 },
+            { name: 'STORM', skyTop: [15, 23, 42], skyBot: [2, 6, 23], groundTop: [15, 23, 42], rain: 1.5, snow: 0 },
+            { name: 'WINTER', skyTop: [148, 163, 184], skyBot: [71, 85, 105], groundTop: [241, 245, 249], rain: 0, snow: 1 }
+        ];
+
+        let currentWeatherIdx = 0;
+        let nextWeatherIdx = 1;
+        let transitionFactor = 0;
+        let lightning = false;
+
+        let particles = [];
+        for (let i = 0; i < 70; i++) {
+            particles.push({
+                x: Math.random() * canvas.width,
+                y: Math.random() * canvas.height,
+                speedY: Math.random() * 8 + 4,
+                speedX: Math.random() * 2 - 1,
+                length: Math.random() * 12 + 8,
+                size: Math.random() * 3 + 2
+            });
+        }
+
+        let clouds = [
+            { x: 100, y: 35, z: 0.5, r: 25 },
+            { x: 400, y: 55, z: 0.8, r: 35 },
+            { x: 700, y: 25, z: 0.4, r: 20 }
+        ];
+
+        const player = {
+            x: 80,
+            y: 135,
+            width: 50,
+            height: 85,
+            dy: 0,
+            gravity: 0.65,
+            jumpForce: -12.5,
+            isJumping: false,
+            isDucking: false
+        };
+
+        let obstacles = [];
+        let spawnTimer = 0;
+
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' || e.code === 'ArrowUp') jump();
+            if (e.code === 'ArrowDown') player.isDucking = true;
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (e.code === 'ArrowDown') player.isDucking = false;
+        });
+
+        canvas.addEventListener('mousedown', jump);
+
+        function jump() {
+            if (!player.isJumping && !gameOver && !player.isDucking) {
+                player.dy = player.jumpForce;
+                player.isJumping = true;
+            } else if (gameOver) {
+                resetGame();
+            }
+        }
+
+        function resetGame() {
+            score = 0;
+            gameSpeed = 6;
+            obstacles = [];
+            gameOver = false;
+            currentWeatherIdx = 0;
+            nextWeatherIdx = 1;
+            transitionFactor = 0;
+            player.y = 135;
+            player.dy = 0;
+            player.isJumping = false;
+            player.isDucking = false;
+            animate();
+        }
+
+        function lerpColor(c1, c2, factor) {
+            let r = Math.round(c1[0] + (c2[0] - c1[0]) * factor);
+            let g = Math.round(c1[1] + (c2[1] - c1[1]) * factor);
+            let b = Math.round(c1[2] + (c2[2] - c1[2]) * factor);
+            return `rgb(${r}, ${g}, ${b})`;
+        }
+
+        function updateWeatherLogic() {
+            transitionFactor += 0.002;
+            if (transitionFactor >= 1) {
+                transitionFactor = 0;
+                currentWeatherIdx = nextWeatherIdx;
+                nextWeatherIdx = (nextWeatherIdx + 1) % weathers.length;
+            }
+
+            let curr = weathers[currentWeatherIdx];
+            if (curr.name === 'STORM' && Math.random() < 0.02) {
+                lightning = true;
+            } else {
+                lightning = false;
+            }
+        }
+
+        function drawDynamicWeather() {
+            if (lightning) {
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                return;
+            }
+
+            let curr = weathers[currentWeatherIdx];
+            let next = weathers[nextWeatherIdx];
+
+            let skyTopColor = lerpColor(curr.skyTop, next.skyTop, transitionFactor);
+            let skyBotColor = lerpColor(curr.skyBot, next.skyBot, transitionFactor);
+            let groundColor = lerpColor(curr.groundTop, next.groundTop, transitionFactor);
+
+            let skyGrad = ctx.createLinearGradient(0, 0, 0, 215);
+            skyGrad.addColorStop(0, skyTopColor);
+            skyGrad.addColorStop(1, skyBotColor);
+            ctx.fillStyle = skyGrad;
+            ctx.fillRect(0, 0, canvas.width, 215);
+
+            clouds.forEach(c => {
+                c.x -= c.z * 1.2;
+                if (c.x < -100) c.x = canvas.width + 100;
+
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+                ctx.beginPath();
+                ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
+                ctx.arc(c.x + c.r * 0.7, c.y - c.r * 0.2, c.r * 0.7, 0, Math.PI * 2);
+                ctx.arc(c.x - c.r * 0.6, c.y + c.r * 0.1, c.r * 0.6, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            let groundGrad = ctx.createLinearGradient(0, 215, 0, 280);
+            groundGrad.addColorStop(0, groundColor);
+            groundGrad.addColorStop(1, '#3f2305');
+            ctx.fillStyle = groundGrad;
+            ctx.fillRect(0, 215, canvas.width, 65);
+
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+            ctx.lineWidth = 2;
+            let offset = (frame * gameSpeed) % 40;
+            for (let x = -offset; x < canvas.width; x += 40) {
+                ctx.beginPath();
+                ctx.moveTo(x, 222);
+                ctx.lineTo(x - 20, 280);
+                ctx.stroke();
+            }
+
+            let currentRain = curr.rain + (next.rain - curr.rain) * transitionFactor;
+            let currentSnow = curr.snow + (next.snow - curr.snow) * transitionFactor;
+
+            if (currentRain > 0.05) {
+                ctx.strokeStyle = `rgba(186, 230, 253, ${Math.min(currentRain, 0.85)})`;
+                ctx.lineWidth = currentRain > 1 ? 2 : 1.2;
+                particles.forEach(p => {
+                    p.y += p.speedY + (currentRain > 1 ? 4 : 0);
+                    p.x += p.speedX - 2;
+                    if (p.y > canvas.height) { p.y = -10; p.x = Math.random() * canvas.width; }
+                    ctx.beginPath();
+                    ctx.moveTo(p.x, p.y);
+                    ctx.lineTo(p.x - 4, p.y + p.length);
+                    ctx.stroke();
+                });
+            } else if (currentSnow > 0.05) {
+                ctx.fillStyle = `rgba(255, 255, 255, ${Math.min(currentSnow, 0.9)})`;
+                particles.forEach(p => {
+                    p.y += p.speedY * 0.3;
+                    p.x += Math.sin(frame * 0.05 + p.y) * 1.5;
+                    if (p.y > canvas.height) { p.y = -10; p.x = Math.random() * canvas.width; }
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+            }
+        }
+
+        // REALISTIC HUMAN CHARACTER (3D Stylized Runner)
+        function drawHumanRunner(x, y, isDucking, isJumping, animFrame) {
+            ctx.save();
+            ctx.translate(x, y);
+
+            let isRunning = !isJumping && !isDucking;
+            let cycle = isRunning ? Math.sin(animFrame * 0.35) : 0;
+            
+            // Joint Swing Angles
+            let legSwing = cycle * 0.6;
+            let armSwing = cycle * 0.7;
+
+            // Ground Shadow
+            let shadowAlpha = isJumping ? 0.15 : 0.4;
+            ctx.fillStyle = `rgba(0,0,0,${shadowAlpha})`;
+            ctx.beginPath(); 
+            ctx.ellipse(20, isDucking ? 55 : 82, 22, 6, 0, 0, Math.PI * 2); 
+            ctx.fill();
+
+            if (isDucking) {
+                // DUCKING POSTURE (Bending down)
+                ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+                
+                // Legs Bent
+                ctx.beginPath(); ctx.moveTo(12, 38); ctx.lineTo(0, 52); ctx.lineTo(12, 54); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(12, 38); ctx.lineTo(24, 52); ctx.lineTo(34, 54); ctx.stroke();
+                
+                // Torso (Lean Forward)
+                let torsoGrad = ctx.createLinearGradient(0, 20, 25, 38);
+                torsoGrad.addColorStop(0, '#f97316'); torsoGrad.addColorStop(1, '#c2410c');
+                ctx.fillStyle = torsoGrad;
+                ctx.beginPath(); ctx.ellipse(18, 30, 14, 8, -0.4, 0, Math.PI * 2); ctx.fill();
+
+                // Head
+                let headGrad = ctx.createRadialGradient(28, 18, 2, 28, 18, 8);
+                headGrad.addColorStop(0, '#ffedd5'); headGrad.addColorStop(1, '#fed7aa');
+                ctx.fillStyle = headGrad;
+                ctx.beginPath(); ctx.arc(28, 18, 8, 0, Math.PI * 2); ctx.fill();
+
+                // Hair
+                ctx.fillStyle = '#0f172a';
+                ctx.beginPath(); ctx.arc(28, 16, 8, Math.PI, Math.PI * 2); ctx.fill();
+
+                // Arms Tucked
+                ctx.strokeStyle = '#f97316'; ctx.lineWidth = 5;
+                ctx.beginPath(); ctx.moveTo(16, 26); ctx.lineTo(28, 36); ctx.stroke();
+
+            } else {
+                // RUNNING / JUMPING POSTURE
+                
+                // 1. Back Arm
+                ctx.strokeStyle = '#ea580c'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+                ctx.beginPath();
+                ctx.moveTo(18, 26);
+                let backArmX = 18 - Math.sin(-armSwing) * 16;
+                let backArmY = 26 + Math.cos(-armSwing) * 16;
+                ctx.lineTo(backArmX, backArmY);
+                ctx.lineTo(backArmX - 6, backArmY + 10);
+                ctx.stroke();
+
+                // 2. Back Leg
+                ctx.strokeStyle = '#0f172a'; ctx.lineWidth = 7; ctx.lineCap = 'round';
+                ctx.beginPath();
+                ctx.moveTo(18, 46);
+                let backKneeX = 18 + Math.sin(-legSwing) * 18;
+                let backKneeY = 46 + Math.cos(-legSwing) * 18;
+                ctx.lineTo(backKneeX, backKneeY);
+                ctx.lineTo(backKneeX - Math.sin(-legSwing) * 12, backKneeY + 16);
+                ctx.stroke();
+
+                // 3. Torso (3D Sport Shirt)
+                let shirtGrad = ctx.createLinearGradient(10, 20, 26, 46);
+                shirtGrad.addColorStop(0, '#ea580c');
+                shirtGrad.addColorStop(0.7, '#f97316');
+                shirtGrad.addColorStop(1, '#c2410c');
+                ctx.fillStyle = shirtGrad;
+                ctx.beginPath();
+                ctx.moveTo(12, 22);
+                ctx.lineTo(24, 22);
+                ctx.lineTo(22, 46);
+                ctx.lineTo(14, 46);
+                ctx.closePath();
+                ctx.fill();
+
+                // 4. Neck & Head
+                ctx.fillStyle = '#fed7aa';
+                ctx.fillRect(16, 17, 4, 6);
+
+                let headGrad = ctx.createRadialGradient(18, 11, 2, 18, 11, 8);
+                headGrad.addColorStop(0, '#ffedd5');
+                headGrad.addColorStop(1, '#fed7aa');
+                ctx.fillStyle = headGrad;
+                ctx.beginPath(); ctx.arc(18, 11, 8, 0, Math.PI * 2); ctx.fill();
+
+                // Hair
+                ctx.fillStyle = '#0f172a';
+                ctx.beginPath(); ctx.arc(18, 9, 8.2, Math.PI * 0.8, Math.PI * 2.1); ctx.fill();
+
+                // 5. Front Leg
+                ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 7.5; ctx.lineCap = 'round';
+                ctx.beginPath();
+                ctx.moveTo(18, 46);
+                let frontKneeX = 18 + Math.sin(legSwing) * 18;
+                let frontKneeY = 46 + Math.cos(legSwing) * 18;
+                ctx.lineTo(frontKneeX, frontKneeY);
+                ctx.lineTo(frontKneeX - Math.sin(legSwing) * 12, frontKneeY + 16);
+                ctx.stroke();
+
+                // Shoes
+                ctx.fillStyle = '#38bdf8';
+                ctx.beginPath();
+                ctx.ellipse(frontKneeX - Math.sin(legSwing) * 12 + 3, frontKneeY + 16, 6, 3, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // 6. Front Arm
+                ctx.strokeStyle = '#f97316'; ctx.lineWidth = 5.5; ctx.lineCap = 'round';
+                ctx.beginPath();
+                ctx.moveTo(18, 24);
+                let frontArmX = 18 - Math.sin(armSwing) * 16;
+                let frontArmY = 24 + Math.cos(armSwing) * 16;
+                ctx.lineTo(frontArmX, frontArmY);
+                ctx.lineTo(frontArmX + 6, frontArmY + 10);
+                ctx.stroke();
+            }
+
+            ctx.restore();
+        }
+
+        // REALISTIC SLIM PARROT-STYLE BIRD
+        function drawRealisticParrot(x, y, animFrame) {
+            ctx.save();
+            ctx.translate(x, y);
+
+            let wingFlap = Math.sin(animFrame * 0.3) * 14;
+
+            // Ground Shadow
+            ctx.fillStyle = 'rgba(0,0,0,0.2)';
+            ctx.beginPath(); ctx.ellipse(15, 55, 12, 4, 0, 0, Math.PI * 2); ctx.fill();
+
+            // Slim Body (Parrot Green)
+            let bodyGrad = ctx.createLinearGradient(0, 5, 24, 15);
+            bodyGrad.addColorStop(0, '#22c55e');
+            bodyGrad.addColorStop(0.6, '#16a34a');
+            bodyGrad.addColorStop(1, '#15803d');
+            ctx.fillStyle = bodyGrad;
+
+            ctx.beginPath();
+            ctx.ellipse(15, 10, 15, 6, -0.1, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Long Tail Feathers
+            ctx.fillStyle = '#0d9488';
+            ctx.beginPath();
+            ctx.moveTo(26, 11);
+            ctx.lineTo(40, 16);
+            ctx.lineTo(28, 13);
+            ctx.closePath();
+            ctx.fill();
+
+            // Curved Wing (Flapping)
+            let wingGrad = ctx.createLinearGradient(10, 8, 22, 8 - wingFlap);
+            wingGrad.addColorStop(0, '#f59e0b');
+            wingGrad.addColorStop(0.5, '#10b981');
+            wingGrad.addColorStop(1, '#0284c7');
+            ctx.fillStyle = wingGrad;
+
+            ctx.beginPath();
+            ctx.moveTo(10, 8);
+            ctx.quadraticCurveTo(18, 8 - wingFlap * 1.3, 25, 4 - wingFlap);
+            ctx.quadraticCurveTo(18, 12, 12, 14);
+            ctx.closePath();
+            ctx.fill();
+
+            // Curved Hooked Beak (Parrot Beak)
+            ctx.fillStyle = '#ef4444';
+            ctx.beginPath();
+            ctx.moveTo(3, 8);
+            ctx.quadraticCurveTo(-4, 10, -2, 15);
+            ctx.lineTo(3, 12);
+            ctx.closePath();
+            ctx.fill();
+
+            // Eye
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath(); ctx.arc(6, 8, 2.5, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#0f172a';
+            ctx.beginPath(); ctx.arc(5.5, 8, 1.2, 0, Math.PI * 2); ctx.fill();
+
+            ctx.restore();
+        }
+
+        // 3D Wooden Crate
+        function draw3DCrate(x, y) {
+            ctx.save();
+            ctx.translate(x, y);
+
+            let frontGrad = ctx.createLinearGradient(0, 0, 38, 38);
+            frontGrad.addColorStop(0, '#b45309'); frontGrad.addColorStop(0.7, '#78350f'); frontGrad.addColorStop(1, '#451a03');
+            ctx.fillStyle = frontGrad;
+            ctx.fillRect(0, 0, 38, 38);
+
+            ctx.fillStyle = '#d97706';
+            ctx.fillRect(0, 0, 38, 5); ctx.fillRect(0, 33, 38, 5);
+            ctx.fillRect(0, 0, 5, 38); ctx.fillRect(33, 0, 5, 38);
+
+            ctx.fillStyle = '#94a3b8';
+            ctx.fillRect(2, 2, 2, 2); ctx.fillRect(34, 2, 2, 2);
+            ctx.fillRect(2, 34, 2, 2); ctx.fillRect(34, 34, 2, 2);
+
+            ctx.strokeStyle = '#451a03'; ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(2, 2); ctx.lineTo(36, 36);
+            ctx.moveTo(36, 2); ctx.lineTo(2, 36);
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        function animate() {
+            if (gameOver) {
+                ctx.fillStyle = 'rgba(11, 15, 25, 0.88)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                ctx.fillStyle = '#facc15';
+                ctx.font = 'bold 36px Arial';
+                ctx.fillText('GAME OVER', canvas.width / 2 - 105, canvas.height / 2 - 10);
+
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 18px Arial';
+                ctx.fillText('Created By: Muhammad Abdullah', canvas.width / 2 - 140, canvas.height / 2 + 30);
+
+                ctx.fillStyle = '#94a3b8';
+                ctx.font = '14px Arial';
+                ctx.fillText('Press Space / Click to Play Again', canvas.width / 2 - 105, canvas.height / 2 + 65);
+                return;
+            }
+
+            requestAnimationFrame(animate);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            frame++;
+
+            updateWeatherLogic();
+            drawDynamicWeather();
+
+            player.dy += player.gravity;
+            player.y += player.dy;
+
+            if (player.y > 135) {
+                player.y = 135;
+                player.dy = 0;
+                player.isJumping = false;
+            }
+
+            let currentY = player.isDucking ? player.y + 30 : player.y;
+            drawHumanRunner(player.x, currentY, player.isDucking, player.isJumping, frame);
+
+            spawnTimer++;
+            if (spawnTimer > Math.max(45, 95 - gameSpeed * 3)) {
+                let isBird = Math.random() > 0.45;
+                if (isBird) {
+                    let heights = [110, 135, 160];
+                    let chosenHeight = heights[Math.floor(Math.random() * heights.length)];
+                    obstacles.push({ x: canvas.width, y: chosenHeight, width: 35, height: 22, type: 'bird' });
+                } else {
+                    obstacles.push({ x: canvas.width, y: 178, width: 38, height: 38, type: 'crate' });
+                }
+                spawnTimer = 0;
+            }
+
+            let currentHeight = player.isDucking ? 45 : 85;
+
+            for (let i = 0; i < obstacles.length; i++) {
+                let obs = obstacles[i];
+                obs.x -= gameSpeed;
+
+                if (obs.type === 'crate') {
+                    draw3DCrate(obs.x, obs.y);
+                } else {
+                    drawRealisticParrot(obs.x, obs.y, frame);
+                }
+
+                if (
+                    player.x < obs.x + obs.width &&
+                    player.x + player.width > obs.x &&
+                    currentY < obs.y + obs.height &&
+                    currentY + currentHeight > obs.y
+                ) {
+                    gameOver = true;
+                }
+            }
+
+            obstacles = obstacles.filter(obs => obs.x + obs.width > 0);
+
+            score++;
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 16px Arial';
+            ctx.fillText('Score: ' + score, canvas.width - 120, 30);
+            
+            let currName = weathers[currentWeatherIdx].name;
+            let nextName = weathers[nextWeatherIdx].name;
+            ctx.fillStyle = '#38bdf8';
+            ctx.fillText(`Season: ${currName} -> ${nextName}`, 20, 30);
+
+            gameSpeed += 0.0015;
+        }
+
+        animate();
+    </script>
+</body>
+</html>
