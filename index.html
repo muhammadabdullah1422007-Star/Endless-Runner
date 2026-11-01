@@ -2,9 +2,15 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title> Endless 3D Runner - Dev: Muhammad Abdullah</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title> Endless Runner - Dev: Muhammad Abdullah</title>
     <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
         body {
             margin: 0;
             padding: 0;
@@ -14,37 +20,91 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            height: 100vh;
+            min-height: 100vh;
             overflow: hidden;
+            touch-action: manipulation;
         }
 
-        h1 { margin-bottom: 2px; color: #38bdf8; text-transform: uppercase; letter-spacing: 2px; text-shadow: 0 0 12px rgba(56, 189, 248, 0.6); }
-        h3 { margin-top: 0; margin-bottom: 12px; color: #facc15; text-shadow: 0 0 8px rgba(250, 204, 21, 0.4); }
+        header {
+            text-align: center;
+            padding: 6px 10px;
+            z-index: 10;
+        }
+
+        h1 { 
+            margin-bottom: 2px; 
+            color: #38bdf8; 
+            text-transform: uppercase; 
+            letter-spacing: 2px; 
+            text-shadow: 0 0 12px rgba(56, 189, 248, 0.6); 
+            font-size: clamp(1rem, 3.5vw, 1.8rem);
+        }
+        h3 { 
+            margin-top: 0; 
+            margin-bottom: 6px; 
+            color: #facc15; 
+            text-shadow: 0 0 8px rgba(250, 204, 21, 0.4); 
+            font-size: clamp(0.75rem, 2.2vw, 1rem);
+        }
+
+        #game-wrapper {
+            position: relative;
+            width: 100vw;
+            height: 75vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 0 10px;
+        }
 
         #gameCanvas {
-            border: 4px solid #38bdf8;
+            border: 3px solid #38bdf8;
             box-shadow: 0 12px 40px rgba(0, 0, 0, 0.9);
             border-radius: 12px;
+            width: 100% !important;
+            height: 100% !important;
+            max-width: 1280px;
+            max-height: 720px;
+            object-fit: fill;
         }
 
         .instructions {
-            margin-top: 12px;
+            margin-top: 8px;
             color: #94a3b8;
-            font-size: 14px;
+            font-size: clamp(11px, 2vw, 14px);
+            text-align: center;
+            z-index: 10;
         }
     </style>
 </head>
 <body>
 
-    <h1> Endless 3D Runner </h1>
-    <h3>Developer: Muhammad Abdullah</h3>
+    <header>
+        <h1> Endless Runner </h1>
+        <h3>Developer: Muhammad Abdullah</h3>
+    </header>
 
-    <canvas id="gameCanvas" width="800" height="280"></canvas>
-    <div class="instructions">Press <b>Spacebar / Click</b> to Jump | Press <b>Down Arrow</b> to Duck</div>
+    <div id="game-wrapper">
+        <canvas id="gameCanvas"></canvas>
+    </div>
+
+    <div class="instructions">Press <b>Spacebar / Tap Screen</b> to Jump | Press <b>Down Arrow</b> to Duck</div>
 
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
+
+        function resizeCanvasResolution() {
+            if (window.innerWidth < 768) {
+                canvas.width = 800;
+                canvas.height = 450;
+            } else {
+                canvas.width = 1280;
+                canvas.height = 720;
+            }
+        }
+        resizeCanvasResolution();
+        window.addEventListener('resize', resizeCanvasResolution);
 
         let score = 0;
         let gameOver = false;
@@ -84,7 +144,7 @@
 
         const player = {
             x: 80,
-            y: 135,
+            y: 0,
             width: 50,
             height: 85,
             dy: 0,
@@ -106,6 +166,10 @@
             if (e.code === 'ArrowDown') player.isDucking = false;
         });
 
+        window.addEventListener('touchstart', (e) => {
+            jump();
+        }, { passive: true });
+
         canvas.addEventListener('mousedown', jump);
 
         function jump() {
@@ -125,7 +189,6 @@
             currentWeatherIdx = 0;
             nextWeatherIdx = 1;
             transitionFactor = 0;
-            player.y = 135;
             player.dy = 0;
             player.isJumping = false;
             player.isDucking = false;
@@ -156,6 +219,9 @@
         }
 
         function drawDynamicWeather() {
+            let skyHeight = canvas.height * 0.60;
+            let groundHeight = canvas.height * 0.40;
+
             if (lightning) {
                 ctx.fillStyle = '#ffffff';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -169,11 +235,11 @@
             let skyBotColor = lerpColor(curr.skyBot, next.skyBot, transitionFactor);
             let groundColor = lerpColor(curr.groundTop, next.groundTop, transitionFactor);
 
-            let skyGrad = ctx.createLinearGradient(0, 0, 0, 215);
+            let skyGrad = ctx.createLinearGradient(0, 0, 0, skyHeight);
             skyGrad.addColorStop(0, skyTopColor);
             skyGrad.addColorStop(1, skyBotColor);
             ctx.fillStyle = skyGrad;
-            ctx.fillRect(0, 0, canvas.width, 215);
+            ctx.fillRect(0, 0, canvas.width, skyHeight);
 
             clouds.forEach(c => {
                 c.x -= c.z * 1.2;
@@ -187,19 +253,19 @@
                 ctx.fill();
             });
 
-            let groundGrad = ctx.createLinearGradient(0, 215, 0, 280);
+            let groundGrad = ctx.createLinearGradient(0, skyHeight, 0, canvas.height);
             groundGrad.addColorStop(0, groundColor);
             groundGrad.addColorStop(1, '#3f2305');
             ctx.fillStyle = groundGrad;
-            ctx.fillRect(0, 215, canvas.width, 65);
+            ctx.fillRect(0, skyHeight, canvas.width, groundHeight);
 
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
             ctx.lineWidth = 2;
             let offset = (frame * gameSpeed) % 40;
             for (let x = -offset; x < canvas.width; x += 40) {
                 ctx.beginPath();
-                ctx.moveTo(x, 222);
-                ctx.lineTo(x - 20, 280);
+                ctx.moveTo(x, skyHeight + 7);
+                ctx.lineTo(x - 20, canvas.height);
                 ctx.stroke();
             }
 
@@ -456,15 +522,17 @@
 
                 ctx.fillStyle = '#facc15';
                 ctx.font = 'bold 36px Arial';
-                ctx.fillText('GAME OVER', canvas.width / 2 - 105, canvas.height / 2 - 10);
+                ctx.textAlign = 'center';
+                ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2 - 10);
 
                 ctx.fillStyle = '#ffffff';
                 ctx.font = 'bold 18px Arial';
-                ctx.fillText('Created By: Muhammad Abdullah', canvas.width / 2 - 140, canvas.height / 2 + 30);
+                ctx.fillText('Created By: Muhammad Abdullah', canvas.width / 2, canvas.height / 2 + 30);
 
                 ctx.fillStyle = '#94a3b8';
                 ctx.font = '14px Arial';
-                ctx.fillText('Press Space / Click to Play Again', canvas.width / 2 - 105, canvas.height / 2 + 65);
+                ctx.fillText('Press Space / Tap to Play Again', canvas.width / 2, canvas.height / 2 + 65);
+                ctx.textAlign = 'left';
                 return;
             }
 
@@ -476,11 +544,14 @@
             updateWeatherLogic();
             drawDynamicWeather();
 
+            let groundY = canvas.height * 0.60;
+            let playerFloorY = groundY - player.height;
+
             player.dy += player.gravity;
             player.y += player.dy;
 
-            if (player.y > 135) {
-                player.y = 135;
+            if (player.y > playerFloorY) {
+                player.y = playerFloorY;
                 player.dy = 0;
                 player.isJumping = false;
             }
@@ -492,11 +563,11 @@
             if (spawnTimer > Math.max(45, 95 - gameSpeed * 3)) {
                 let isBird = Math.random() > 0.45;
                 if (isBird) {
-                    let heights = [110, 135, 160];
+                    let heights = [groundY - 70, groundY - 45, groundY - 20];
                     let chosenHeight = heights[Math.floor(Math.random() * heights.length)];
                     obstacles.push({ x: canvas.width, y: chosenHeight, width: 35, height: 22, type: 'bird' });
                 } else {
-                    obstacles.push({ x: canvas.width, y: 178, width: 38, height: 38, type: 'crate' });
+                    obstacles.push({ x: canvas.width, y: groundY - 38, width: 38, height: 38, type: 'crate' });
                 }
                 spawnTimer = 0;
             }
@@ -528,7 +599,7 @@
             score++;
             ctx.fillStyle = '#ffffff';
             ctx.font = 'bold 16px Arial';
-            ctx.fillText('Score: ' + score, canvas.width - 120, 30);
+            ctx.fillText('Score: ' + score, canvas.width - 130, 30);
             
             let currName = weathers[currentWeatherIdx].name;
             let nextName = weathers[nextWeatherIdx].name;
